@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Philippine Driver's License &bull; Name Scanner</title>
+    <title>Philippine Driver's License &bull; Scanner</title>
     
     <!-- Google Fonts: Plus Jakarta Sans & JetBrains Mono -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -317,11 +317,6 @@
         }
         .btn-secondary:active { background: #475569; }
 
-        .btn-warning {
-            background: #f59e0b;
-            color: #000;
-        }
-
         .btn-success {
             background: #10b981;
             color: #fff;
@@ -396,10 +391,17 @@
             color: #34d399;
         }
 
-        .field-box.last-name-primary {
-            font-size: 18px;
+        .field-box.license-no-primary {
+            font-size: 17px;
             color: #38bdf8;
             border-color: rgba(56, 189, 248, 0.4);
+            letter-spacing: 1px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .field-box.last-name-primary {
+            font-size: 17px;
+            color: #f8fafc;
         }
 
         .copy-icon {
@@ -502,8 +504,8 @@
                     <i class="ph ph-identification-card"></i>
                 </div>
                 <div class="brand-text">
-                    <h1>LTO ID Name Scanner</h1>
-                    <p>Philippine Driver's License Parser</p>
+                    <h1>LTO License Scanner</h1>
+                    <p>Driver's License &amp; Name Reader</p>
                 </div>
             </div>
             <div class="badge-live">
@@ -565,15 +567,24 @@
             </div>
         </div>
 
-        <!-- Extracted Name Fields Card -->
+        <!-- Extracted Fields Card -->
         <div class="results-card">
             <div class="results-header">
                 <span class="results-title">
-                    <i class="ph ph-user-check"></i> Extracted Cardholder Name
+                    <i class="ph ph-user-check"></i> Extracted License Details
                 </span>
                 <span class="badge-live" id="engine_badge" style="display: none;">
-                    <i class="ph ph-check-circle"></i> Name Parsed
+                    <i class="ph ph-check-circle"></i> Extracted
                 </span>
+            </div>
+
+            <!-- License Number Field -->
+            <div class="field-group">
+                <div class="field-label">
+                    <span>Driver's License Number</span>
+                    <span class="copy-icon" onclick="copyField('val_license_no', 'License Number')"><i class="ph ph-copy"></i></span>
+                </div>
+                <div class="field-box license-no-primary" id="val_license_no">—</div>
             </div>
 
             <!-- Last Name Field -->
@@ -603,8 +614,8 @@
                 <div class="field-box" id="val_middle_name">—</div>
             </div>
 
-            <button class="btn btn-success" id="btn_copy_all" onclick="copyAllNames()" style="margin-top: 4px;">
-                <i class="ph ph-copy-simple"></i> Copy Full Name
+            <button class="btn btn-success" id="btn_copy_all" onclick="copyAllDetails()" style="margin-top: 4px;">
+                <i class="ph ph-copy-simple"></i> Copy All Details
             </button>
         </div>
 
@@ -651,7 +662,7 @@
         let isTorchOn = false;
         let scanTimer = null;
         let isWorkerReady = false;
-        let lastExtractedNames = null;
+        let lastExtractedDetails = null;
 
         // Upload image state
         let uploadedImageObj = null;
@@ -678,16 +689,53 @@
         }
 
         /**
+         * Cleans and sanitizes OCR character confusions in Philippine License Numbers
+         */
+        function sanitizeLicenseNumber(candidate) {
+            if (!candidate) return '';
+            let clean = candidate.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+            if (clean.length === 11) {
+                let p1 = clean.substring(0, 3);
+                let p2 = clean.substring(3, 5);
+                let p3 = clean.substring(5, 11);
+
+                let letter = p1.charAt(0).replace(/0/g, 'O').replace(/1/g, 'I');
+                let num1 = p1.substring(1).replace(/O/g, '0').replace(/I/g, '1').replace(/S/g, '5').replace(/B/g, '8').replace(/Z/g, '2');
+                let num2 = p2.replace(/O/g, '0').replace(/I/g, '1').replace(/S/g, '5').replace(/B/g, '8').replace(/Z/g, '2');
+                let num3 = p3.replace(/O/g, '0').replace(/I/g, '1').replace(/S/g, '5').replace(/B/g, '8').replace(/Z/g, '2').replace(/G/g, '6');
+
+                if (/^[A-Z]\d{2}$/.test(`${letter}${num1}`) && /^\d{2}$/.test(num2) && /^\d{6}$/.test(num3)) {
+                    return `${letter}${num1}-${num2}-${num3}`;
+                }
+            }
+            return '';
+        }
+
+        /**
+         * Extracts Philippine License Number (Pattern: A00-00-000000)
+         */
+        function extractLicenseNumber(rawText) {
+            if (!rawText || typeof rawText !== 'string') return '';
+
+            // Pattern 1: Standard 3-2-6 pattern across text
+            const mPattern = rawText.match(/\b([A-Za-z][0-9OISBZoisbz]{2}[- ]?[0-9OISBZoisbz]{2}[- ]?[0-9OISBZGoisbzg]{6})\b/);
+            if (mPattern) {
+                const sanitized = sanitizeLicenseNumber(mPattern[1]);
+                if (sanitized) return sanitized;
+            }
+
+            // Pattern 2: Label-based extraction
+            const mLabel = rawText.match(/(?:License\s*No\.?|Lic\.?\s*No\.?|DL\s*No\.?)\s*[:\s]*([A-Za-z0-9\-]{8,15})/i);
+            if (mLabel) {
+                const sanitized = sanitizeLicenseNumber(mLabel[1]);
+                if (sanitized) return sanitized;
+            }
+
+            return '';
+        }
+
+        /**
          * Precision Name Extractor for LTO Philippine Driver's Licenses
-         * 
-         * LTO Format Structure:
-         * Header: "Last Name, First Name, Middle Name"
-         * Value:  "<SURNAME>, <FIRST_NAME> <MIDDLE_NAME>"
-         * 
-         * Location Rule:
-         * 1. Last Name   -> Before the primary comma
-         * 2. First Name  -> After comma, all given names except the last token
-         * 3. Middle Name -> After comma, the final token
          */
         function parsePhilippineNames(rawText) {
             const res = { last_name: '', first_name: '', middle_name: '' };
@@ -699,11 +747,9 @@
             const headerIdx = lines.findIndex(l => /Last\s*Name/i.test(l) && (/First\s*Name/i.test(l) || /Middle\s*Name/i.test(l) || /Surname/i.test(l)));
 
             if (headerIdx !== -1) {
-                // Check up to 3 lines directly below the anchor
                 for (let offset = 1; offset <= 3 && (headerIdx + offset) < lines.length; offset++) {
                     const nextLine = lines[headerIdx + offset];
 
-                    // Stop if hitting subsequent metadata labels
                     if (/Nationality|Sex|Date\s*of\s*Birth|Address|License\s*No|Weight|Height/i.test(nextLine)) {
                         break;
                     }
@@ -786,6 +832,21 @@
         }
 
         /**
+         * Combined License & Name Extraction Function
+         */
+        function parsePhilippineLicense(rawText) {
+            const names = parsePhilippineNames(rawText);
+            const licenseNo = extractLicenseNumber(rawText);
+
+            return {
+                license_number: licenseNo,
+                last_name: names.last_name,
+                first_name: names.first_name,
+                middle_name: names.middle_name
+            };
+        }
+
+        /**
          * Initialize Tesseract Worker in background
          */
         async function initOCRWorker() {
@@ -793,7 +854,7 @@
             try {
                 tesseractWorker = await Tesseract.createWorker('eng');
                 await tesseractWorker.setParameters({
-                    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-,/. '
+                    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-,/. '
                 });
                 isWorkerReady = true;
                 setUiStatus('searching', 'Align ID inside the box');
@@ -965,11 +1026,11 @@
         }
 
         /**
-         * Run OCR & Extract Target Names
+         * Run OCR & Extract Target License Details
          */
         async function processOCRCanvas(canvas) {
             isProcessing = true;
-            setUiStatus('reading', 'Reading Cardholder Names...');
+            setUiStatus('reading', 'Reading License & Names...');
 
             try {
                 let text = '';
@@ -981,11 +1042,11 @@
                     text = ret.data.text || '';
                 }
 
-                const names = parsePhilippineNames(text);
-                updateDebugPreview(canvas, null, text, names);
+                const details = parsePhilippineLicense(text);
+                updateDebugPreview(canvas, null, text, details);
 
-                if (names.last_name && (names.first_name || names.last_name.length >= 3)) {
-                    handleSuccessfulExtraction(names);
+                if (details.license_number || (details.last_name && (details.first_name || details.last_name.length >= 3))) {
+                    handleSuccessfulExtraction(details);
                     return true;
                 }
             } catch (err) {
@@ -996,42 +1057,47 @@
             return false;
         }
 
-        function handleSuccessfulExtraction(names) {
+        function handleSuccessfulExtraction(details) {
             clearInterval(scanTimer);
             playSuccessChime();
 
-            lastExtractedNames = names;
-            setUiStatus('success', 'Cardholder Names Located!');
+            lastExtractedDetails = details;
+            setUiStatus('success', 'License Details Extracted!');
 
             // Populate Card
+            const elLic = document.getElementById('val_license_no');
             const elLast = document.getElementById('val_last_name');
             const elFirst = document.getElementById('val_first_name');
             const elMid = document.getElementById('val_middle_name');
 
+            if (elLic) {
+                elLic.innerText = details.license_number || '—';
+                if (details.license_number) elLic.classList.add('highlight');
+            }
             if (elLast) {
-                elLast.innerText = names.last_name || '—';
-                elLast.classList.add('highlight');
+                elLast.innerText = details.last_name || '—';
+                if (details.last_name) elLast.classList.add('highlight');
             }
             if (elFirst) {
-                elFirst.innerText = names.first_name || '—';
-                elFirst.classList.add('highlight');
+                elFirst.innerText = details.first_name || '—';
+                if (details.first_name) elFirst.classList.add('highlight');
             }
             if (elMid) {
-                elMid.innerText = names.middle_name || '—';
-                elMid.classList.add('highlight');
+                elMid.innerText = details.middle_name || '—';
+                if (details.middle_name) elMid.classList.add('highlight');
             }
 
             document.getElementById('engine_badge').style.display = 'inline-flex';
-            showToast(`Last Name: ${names.last_name} Extracted!`);
+            showToast(`License: ${details.license_number || details.last_name} Extracted!`);
         }
 
         function restartScanner() {
-            lastExtractedNames = null;
+            lastExtractedDetails = null;
             isProcessing = false;
             uploadedImageObj = null;
             currentRotationDegrees = 0;
 
-            ['val_last_name', 'val_first_name', 'val_middle_name'].forEach(id => {
+            ['val_license_no', 'val_last_name', 'val_first_name', 'val_middle_name'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) {
                     el.innerText = '—';
@@ -1143,7 +1209,7 @@
                 return;
             }
 
-            setUiStatus('searching', 'Names not found. Try tapping Rotate 90° or re-uploading.');
+            setUiStatus('searching', 'Details not detected. Try tapping Rotate 90° or re-uploading.');
         }
 
         /**
@@ -1199,14 +1265,15 @@
             showToast(`${labelName}: "${el.innerText}" copied!`);
         }
 
-        function copyAllNames() {
-            if (!lastExtractedNames) {
-                showToast('Scan an ID first to copy names');
+        function copyAllDetails() {
+            if (!lastExtractedDetails) {
+                showToast('Scan an ID first to copy details');
                 return;
             }
-            const fullName = [lastExtractedNames.last_name, lastExtractedNames.first_name, lastExtractedNames.middle_name].filter(Boolean).join(' ');
-            navigator.clipboard.writeText(fullName);
-            showToast(`Copied: ${fullName}`);
+            const d = lastExtractedDetails;
+            const fullText = `License No: ${d.license_number}\nLast Name: ${d.last_name}\nFirst Name: ${d.first_name}\nMiddle Name: ${d.middle_name}`;
+            navigator.clipboard.writeText(fullText);
+            showToast('All details copied to clipboard!');
         }
 
         function showToast(msg) {
