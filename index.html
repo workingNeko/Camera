@@ -681,13 +681,13 @@
          * Precision Name Extractor for LTO Philippine Driver's Licenses
          * 
          * LTO Format Structure:
-         * Header: "Last Name, First Name, Middle Name" (or "Last Name. First Name. Middle Name")
-         * Value:  "ADLAWAN, LEVNICOLAYEVICH CRUZ"
+         * Header: "Last Name, First Name, Middle Name"
+         * Value:  "<SURNAME>, <FIRST_NAME> <MIDDLE_NAME>"
          * 
          * Location Rule:
          * 1. Last Name   -> Before the primary comma
          * 2. First Name  -> After comma, all given names except the last token
-         * 3. Middle Name -> After comma, the final token (mother's maiden surname)
+         * 3. Middle Name -> After comma, the final token
          */
         function parsePhilippineNames(rawText) {
             const res = { last_name: '', first_name: '', middle_name: '' };
@@ -708,7 +708,7 @@
                         break;
                     }
 
-                    // A. Standard Comma Separation: "ADLAWAN, LEVNICOLAYEVICH CRUZ"
+                    // A. Standard Comma Separation
                     const commaMatch = splitCommaSeparatedName(nextLine);
                     if (commaMatch) {
                         return commaMatch;
