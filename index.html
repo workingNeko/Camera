@@ -1,0 +1,1134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>DMPS ID Scanner &bull; Name Reader Test</title>
+    
+    <!-- Google Fonts: Plus Jakarta Sans -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    
+    <!-- Phosphor Icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web@2.0.3"></script>
+
+    <!-- Tesseract.js v5 Client-Side OCR Engine -->
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
+    <style>
+        :root {
+            --primary: #0284c7;
+            --primary-dark: #0369a1;
+            --primary-light: #e0f2fe;
+            --accent: #10b981;
+            --accent-glow: rgba(16, 185, 129, 0.35);
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --bg-dark: #090d16;
+            --card-bg: #111827;
+            --card-border: #1f2937;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --radius-sm: 8px;
+            --radius-md: 12px;
+            --radius-lg: 16px;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 16px 12px 32px 12px;
+        }
+
+        .app-container {
+            width: 100%;
+            max-width: 480px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        /* Header Bar */
+        .app-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 4px;
+        }
+
+        .app-brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .brand-icon {
+            width: 38px;
+            height: 38px;
+            background: linear-gradient(135deg, #0284c7, #38bdf8);
+            border-radius: var(--radius-sm);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            color: #fff;
+            box-shadow: 0 4px 12px rgba(2, 132, 199, 0.4);
+        }
+
+        .brand-text h1 {
+            font-size: 16px;
+            font-weight: 800;
+            letter-spacing: -0.3px;
+        }
+
+        .brand-text p {
+            font-size: 11px;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+
+        .badge-live {
+            background: rgba(16, 185, 129, 0.15);
+            color: #34d399;
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            padding: 4px 8px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 700;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .badge-live .pulse-dot {
+            width: 6px;
+            height: 6px;
+            background-color: #34d399;
+            border-radius: 50%;
+            animation: pulse 1.5s infinite ease-in-out;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(0.9); opacity: 0.6; }
+            50% { transform: scale(1.4); opacity: 1; }
+        }
+
+        /* Viewfinder Card */
+        .camera-card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: var(--radius-lg);
+            overflow: hidden;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .viewport-wrapper {
+            position: relative;
+            width: 100%;
+            height: 280px;
+            background: #030712;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #camera_video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        /* Card Bounding Target Box */
+        .target-box {
+            position: absolute;
+            width: 86%;
+            height: 72%;
+            border: 2px solid var(--danger);
+            border-radius: var(--radius-md);
+            pointer-events: none;
+            box-shadow: 0 0 0 9999px rgba(3, 7, 18, 0.65), 0 0 16px rgba(239, 68, 68, 0.4);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .target-box.detected {
+            border-color: var(--warning);
+            box-shadow: 0 0 0 9999px rgba(3, 7, 18, 0.5), 0 0 20px rgba(245, 158, 11, 0.5);
+        }
+
+        .target-box.success {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 9999px rgba(3, 7, 18, 0.35), 0 0 25px var(--accent-glow);
+        }
+
+        /* Neon Corners */
+        .corner {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            border-color: inherit;
+            border-style: solid;
+        }
+        .corner.tl { top: -2px; left: -2px; border-width: 3.5px 0 0 3.5px; border-top-left-radius: 10px; }
+        .corner.tr { top: -2px; right: -2px; border-width: 3.5px 3.5px 0 0; border-top-right-radius: 10px; }
+        .corner.bl { bottom: -2px; left: -2px; border-width: 0 0 3.5px 3.5px; border-bottom-left-radius: 10px; }
+        .corner.br { bottom: -2px; right: -2px; border-width: 0 3.5px 3.5px 0; border-bottom-right-radius: 10px; }
+
+        /* Animated Laser Scan Line */
+        .laser-line {
+            position: absolute;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(90deg, transparent, #ef4444, #f87171, #ef4444, transparent);
+            box-shadow: 0 0 14px #ef4444;
+            animation: scanLaser 2s infinite ease-in-out;
+            pointer-events: none;
+            transition: all 0.3s ease;
+        }
+
+        .target-box.detected .laser-line {
+            background: linear-gradient(90deg, transparent, #f59e0b, #fbbf24, #f59e0b, transparent);
+            box-shadow: 0 0 14px #f59e0b;
+        }
+
+        .target-box.success .laser-line {
+            background: linear-gradient(90deg, transparent, #10b981, #6ee7b7, #10b981, transparent);
+            box-shadow: 0 0 14px #10b981;
+            animation: none;
+            top: 50%;
+        }
+
+        @keyframes scanLaser {
+            0% { top: 6%; opacity: 0.8; }
+            50% { top: 92%; opacity: 1; }
+            100% { top: 6%; opacity: 0.8; }
+        }
+
+        /* Floating Viewport Controls */
+        .viewport-controls {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            display: flex;
+            gap: 8px;
+            z-index: 10;
+        }
+
+        .control-btn {
+            background: rgba(17, 24, 39, 0.8);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: #fff;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .control-btn:active {
+            transform: scale(0.92);
+        }
+
+        /* Status Banner */
+        .status-banner {
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: #1e293b;
+            border-bottom: 1px solid var(--card-border);
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .status-indicator.searching { color: var(--danger); }
+        .status-indicator.detected { color: var(--warning); }
+        .status-indicator.reading { color: #38bdf8; }
+        .status-indicator.success { color: var(--accent); }
+
+        /* Actions Bar */
+        .action-bar {
+            padding: 12px 16px;
+            display: flex;
+            gap: 10px;
+            background: var(--card-bg);
+        }
+
+        .btn {
+            flex: 1;
+            padding: 11px 16px;
+            border-radius: var(--radius-sm);
+            font-size: 13px;
+            font-weight: 700;
+            border: none;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: all 0.2s ease;
+            font-family: inherit;
+        }
+
+        .btn-primary {
+            background: #0284c7;
+            color: #fff;
+        }
+        .btn-primary:active { background: #0369a1; }
+
+        .btn-secondary {
+            background: #334155;
+            color: #f1f5f9;
+        }
+        .btn-secondary:active { background: #475569; }
+
+        .btn-success {
+            background: #10b981;
+            color: #fff;
+        }
+
+        /* Extracted Results Section */
+        .results-card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: var(--radius-lg);
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
+
+        .results-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--card-border);
+        }
+
+        .results-title {
+            font-size: 13px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .field-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .field-label {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .field-box {
+            background: #0b1120;
+            border: 1px solid #1e293b;
+            border-radius: var(--radius-sm);
+            padding: 10px 14px;
+            font-size: 15px;
+            font-weight: 700;
+            color: #ffffff;
+            letter-spacing: 0.5px;
+            min-height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            transition: border-color 0.3s ease, background 0.3s ease;
+        }
+
+        .field-box.highlight {
+            border-color: #10b981;
+            background: rgba(16, 185, 129, 0.08);
+            color: #34d399;
+        }
+
+        .field-box.last-name-primary {
+            font-size: 18px;
+            color: #38bdf8;
+            border-color: rgba(56, 189, 248, 0.4);
+        }
+
+        .copy-icon {
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 16px;
+            transition: color 0.2s;
+        }
+        .copy-icon:hover { color: #fff; }
+
+        /* Collapsible Debug Panel */
+        .debug-toggle-btn {
+            background: transparent;
+            border: 1px dashed var(--card-border);
+            color: var(--text-muted);
+            font-size: 11.5px;
+            font-weight: 600;
+            padding: 8px;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        .debug-panel {
+            display: none;
+            background: #030712;
+            border: 1px solid #1f2937;
+            border-radius: var(--radius-md);
+            padding: 12px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: #38bdf8;
+            gap: 10px;
+            flex-direction: column;
+        }
+
+        .debug-panel.active {
+            display: flex;
+        }
+
+        .debug-canvas-preview {
+            background: #000;
+            border: 1px solid #334155;
+            border-radius: 4px;
+            max-width: 100%;
+            height: auto;
+            margin-top: 4px;
+        }
+
+        .debug-raw-text {
+            background: #111827;
+            padding: 6px 8px;
+            border-radius: 4px;
+            color: #94a3b8;
+            max-height: 80px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        /* Toast Popup */
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: #10b981;
+            color: #fff;
+            padding: 10px 18px;
+            border-radius: 999px;
+            font-size: 13px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+            opacity: 0;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: 9999;
+            pointer-events: none;
+        }
+
+        .toast.show {
+            transform: translateX(-50%) translateY(0);
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="app-container">
+        
+        <!-- Header -->
+        <header class="app-header">
+            <div class="app-brand">
+                <div class="brand-icon">
+                    <i class="ph ph-identification-card"></i>
+                </div>
+                <div class="brand-text">
+                    <h1>DMPS ID Reader</h1>
+                    <p>Static Real-Time Camera Test</p>
+                </div>
+            </div>
+            <div class="badge-live">
+                <span class="pulse-dot"></span> Phone Camera OCR
+            </div>
+        </header>
+
+        <!-- Camera Viewfinder Card -->
+        <div class="camera-card">
+            
+            <div class="viewport-wrapper">
+                <video id="camera_video" playsinline autoplay muted></video>
+                
+                <!-- Target Alignment Box -->
+                <div id="target_box" class="target-box">
+                    <span class="corner tl"></span>
+                    <span class="corner tr"></span>
+                    <span class="corner bl"></span>
+                    <span class="corner br"></span>
+                    <div class="laser-line"></div>
+                </div>
+
+                <!-- Floating Tools (Flip Camera & Torch) -->
+                <div class="viewport-controls">
+                    <button class="control-btn" id="btn_flip_camera" title="Switch Camera" onclick="toggleCameraFacing()">
+                        <i class="ph ph-camera-rotate"></i>
+                    </button>
+                    <button class="control-btn" id="btn_torch" title="Flashlight" onclick="toggleTorch()">
+                        <i class="ph ph-flashlight"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Status Indicator -->
+            <div class="status-banner">
+                <div class="status-indicator searching" id="status_indicator">
+                    <i class="ph ph-bounding-box" id="status_icon"></i>
+                    <span id="status_text">Align ID inside the box</span>
+                </div>
+                <span id="fps_text" style="color: var(--text-muted); font-size: 11px;">Init...</span>
+            </div>
+
+            <!-- Action Controls -->
+            <div class="action-bar">
+                <label class="btn btn-primary" style="cursor: pointer;">
+                    <i class="ph ph-upload-simple"></i> Upload Photo
+                    <input type="file" id="file_uploader" accept="image/*" style="display: none;" onchange="handlePhotoUpload(event)">
+                </label>
+                <button class="btn btn-secondary" onclick="restartScanner()">
+                    <i class="ph ph-arrow-counter-clockwise"></i> Reset / Rescan
+                </button>
+            </div>
+        </div>
+
+        <!-- Extracted Name Fields Card -->
+        <div class="results-card">
+            <div class="results-header">
+                <span class="results-title">
+                    <i class="ph ph-user-check"></i> Extracted Cardholder Name
+                </span>
+                <span class="badge-live" id="engine_badge" style="display: none;">
+                    <i class="ph ph-lightning"></i> Tesseract OCR
+                </span>
+            </div>
+
+            <!-- Last Name Field -->
+            <div class="field-group">
+                <div class="field-label">
+                    <span>1. Last Name (Surname)</span>
+                    <span class="copy-icon" onclick="copyField('val_last_name', 'Last Name')"><i class="ph ph-copy"></i></span>
+                </div>
+                <div class="field-box last-name-primary" id="val_last_name">—</div>
+            </div>
+
+            <!-- First Name Field -->
+            <div class="field-group">
+                <div class="field-label">
+                    <span>2. First Name (Given Name)</span>
+                    <span class="copy-icon" onclick="copyField('val_first_name', 'First Name')"><i class="ph ph-copy"></i></span>
+                </div>
+                <div class="field-box" id="val_first_name">—</div>
+            </div>
+
+            <!-- Middle Name Field -->
+            <div class="field-group">
+                <div class="field-label">
+                    <span>3. Middle Name / Initial</span>
+                    <span class="copy-icon" onclick="copyField('val_middle_name', 'Middle Name')"><i class="ph ph-copy"></i></span>
+                </div>
+                <div class="field-box" id="val_middle_name">—</div>
+            </div>
+
+            <button class="btn btn-success" id="btn_copy_all" onclick="copyAllNames()" style="margin-top: 4px;">
+                <i class="ph ph-copy-simple"></i> Copy Full Name
+            </button>
+        </div>
+
+        <!-- Live Diagnostic Inspector Drawer -->
+        <button class="debug-toggle-btn" onclick="toggleDebugDrawer()">
+            <i class="ph ph-bug"></i> Toggle Live OCR Diagnostic Inspector
+        </button>
+
+        <div class="debug-panel" id="debug_drawer">
+            <div style="display: flex; justify-content: space-between;">
+                <span><strong>Sharpness Score:</strong> <span id="debug_sharpness">0</span></span>
+                <span><strong>Camera:</strong> <span id="debug_cam_mode">Environment (Back)</span></span>
+            </div>
+            <div>
+                <strong>Enhanced Card Crop:</strong>
+                <canvas id="debug_canvas" class="debug-canvas-preview"></canvas>
+            </div>
+            <div>
+                <strong>Raw OCR Text Recognized:</strong>
+                <div id="debug_raw_text" class="debug-raw-text">(Waiting for clear frame...)</div>
+            </div>
+            <div>
+                <strong>Parsed JSON:</strong>
+                <pre id="debug_json" style="color: #4ade80; font-size: 10px;">{}</pre>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Toast Notification -->
+    <div class="toast" id="toast_msg">
+        <i class="ph ph-check-circle-fill" style="font-size: 18px;"></i>
+        <span id="toast_text">Copied to clipboard!</span>
+    </div>
+
+    <script>
+        /**
+         * State & Global Variables
+         */
+        let videoStream = null;
+        let tesseractWorker = null;
+        let isProcessing = false;
+        let currentFacingMode = 'environment';
+        let isTorchOn = false;
+        let scanTimer = null;
+        let isWorkerReady = false;
+        let lastExtractedNames = null;
+
+        // Noise dictionary for Philippine IDs
+        const NOISE_WORDS = /^(republic|philippines|department|transportation|office|driver|drivers|license|non-professional|professional|student|permit|restrictions|conditions|agency|code|blood|weight|height|eyes|color|organ|donor|signature|official|receipt|valid|until|nationality|filipino|sex|gender|dotr|lto|assistant|secretary|galvante|edgar|card|acard|photo|licensee|autodeal|dmv|ucence|dmvews|ucener|bldg|building|land|republica|pilipinas|address|birth|date|exp|expiration|dl|no|lic|name|names|first|middle|last|given|family|surname|apelyido)$/i;
+
+        function isNoiseWord(str) {
+            if (!str) return true;
+            return NOISE_WORDS.test(str.toLowerCase().trim());
+        }
+
+        function isValidNameWord(str) {
+            if (!str) return false;
+            const clean = str.trim();
+            if (clean.length < 2) return false;
+            if (isNoiseWord(clean)) return false;
+            if (!/^[A-Za-z'-\.]+$/.test(clean)) return false;
+            if (clean.length <= 2 && !/^(de|da|lo|la|le|al|el|yu|ng|sy|po|ho|go|tu|co|su|lu|li|fu|ma|na)$/i.test(clean)) {
+                return false;
+            }
+            return true;
+        }
+
+        /**
+         * Robust Philippine Name Extractor
+         * Locates: Last Name, First Name, Middle Name
+         */
+        function parsePhilippineNames(rawText) {
+            const res = { last_name: '', first_name: '', middle_name: '' };
+            if (!rawText || typeof rawText !== 'string') return res;
+
+            const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+
+            // 1. Search for "Last Name, First Name, Middle Name" Header
+            const headerIdx = lines.findIndex(l => /Last\s*Name.*First\s*Name/i.test(l) || /Last\s*Name/i.test(l));
+
+            if (headerIdx !== -1 && lines[headerIdx + 1]) {
+                const nextLine = lines[headerIdx + 1];
+                
+                // Format A: Single line with comma "ADLAWAN, LEVNICOLAYEVICH CRUZ"
+                if (nextLine.includes(',')) {
+                    return splitCommaSeparatedName(nextLine);
+                }
+
+                // Format B: Multi-line structure under header
+                // Line 1: Last Name, Line 2: First Name, Line 3: Middle Name
+                const candidateLast = nextLine.replace(/[^A-Za-z\s-]/g, '').trim();
+                if (isValidNameWord(candidateLast.split(/\s+/)[0])) {
+                    res.last_name = candidateLast.toUpperCase();
+
+                    if (lines[headerIdx + 2] && !isNoiseWord(lines[headerIdx + 2])) {
+                        const candidateFirst = lines[headerIdx + 2].replace(/[^A-Za-z\s-]/g, '').trim();
+                        if (isValidNameWord(candidateFirst.split(/\s+/)[0])) {
+                            res.first_name = candidateFirst.toUpperCase();
+                        }
+                    }
+
+                    if (lines[headerIdx + 3] && !isNoiseWord(lines[headerIdx + 3]) && !/^\d+$/.test(lines[headerIdx + 3])) {
+                        const candidateMid = lines[headerIdx + 3].replace(/[^A-Za-z\s-]/g, '').trim();
+                        if (isValidNameWord(candidateMid.split(/\s+/)[0])) {
+                            res.middle_name = candidateMid.toUpperCase();
+                        }
+                    }
+
+                    if (res.last_name && res.first_name) {
+                        return res;
+                    }
+                }
+            }
+
+            // 2. Search for any comma-separated line (e.g. "ADLAWAN, LEVNICOLAYEVICH C.")
+            for (let i = 0; i < lines.length; i++) {
+                let l = lines[i];
+                if (l.includes(',') && !isNoiseWord(l) && !/street|ave|brgy|road|daet|city|subd|republic|philippines/i.test(l)) {
+                    const parsed = splitCommaSeparatedName(l);
+                    if (parsed.last_name && (parsed.first_name || parsed.last_name.length > 2)) {
+                        return parsed;
+                    }
+                }
+            }
+
+            // 3. Fallback: Search valid surname candidates
+            for (let i = 0; i < lines.length; i++) {
+                let l = lines[i];
+                if (/\d/.test(l) || /street|ave|brgy|road|daet|city|subd|republic|philippines|license/i.test(l)) continue;
+                let tokens = l.replace(/[^A-Za-z\s,]/g, '').split(/\s+/).filter(isValidNameWord);
+                if (tokens.length >= 2 && tokens.length <= 4) {
+                    if (tokens.length >= 3) {
+                        res.last_name = tokens[0].toUpperCase();
+                        res.first_name = tokens.slice(1, -1).join(' ').toUpperCase();
+                        res.middle_name = tokens[tokens.length - 1].toUpperCase();
+                    } else {
+                        res.last_name = tokens[0].toUpperCase();
+                        res.first_name = tokens[1].toUpperCase();
+                    }
+                    return res;
+                }
+            }
+
+            return res;
+        }
+
+        function splitCommaSeparatedName(line) {
+            const res = { last_name: '', first_name: '', middle_name: '' };
+            const clean = line.replace(/[^A-Za-z\s,-]/g, ' ').replace(/\s+/g, ' ').trim();
+            const parts = clean.split(',');
+            if (parts.length < 2) return res;
+
+            const lTokens = parts[0].trim().split(/\s+/).filter(isValidNameWord);
+            const rTokens = parts.slice(1).join(' ').trim().split(/\s+/).filter(isValidNameWord);
+
+            if (lTokens.length > 0) {
+                res.last_name = lTokens.join(' ').toUpperCase();
+            }
+
+            if (rTokens.length === 1) {
+                res.first_name = rTokens[0].toUpperCase();
+            } else if (rTokens.length === 2) {
+                res.first_name = rTokens[0].toUpperCase();
+                res.middle_name = rTokens[1].toUpperCase();
+            } else if (rTokens.length >= 3) {
+                res.middle_name = rTokens[rTokens.length - 1].toUpperCase();
+                res.first_name = rTokens.slice(0, rTokens.length - 1).join(' ').toUpperCase();
+            }
+
+            return res;
+        }
+
+        /**
+         * Initialize Tesseract Worker in background
+         */
+        async function initOCRWorker() {
+            setUiStatus('reading', 'Loading OCR Engine...');
+            try {
+                tesseractWorker = await Tesseract.createWorker('eng');
+                await tesseractWorker.setParameters({
+                    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-,/. '
+                });
+                isWorkerReady = true;
+                setUiStatus('searching', 'Align ID inside the box');
+                document.getElementById('fps_text').innerText = 'OCR Ready';
+            } catch (err) {
+                console.error('OCR Worker Init error:', err);
+                setUiStatus('searching', 'Ready (Fallback Mode)');
+            }
+        }
+
+        /**
+         * Start Phone Camera Stream
+         */
+        async function startCamera() {
+            if (videoStream) {
+                videoStream.getTracks().forEach(t => t.stop());
+            }
+
+            const video = document.getElementById('camera_video');
+            const constraints = {
+                video: {
+                    facingMode: { ideal: currentFacingMode },
+                    width: { ideal: 1920, min: 1280 },
+                    height: { ideal: 1080, min: 720 }
+                }
+            };
+
+            try {
+                videoStream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = videoStream;
+                await video.play();
+
+                clearInterval(scanTimer);
+                scanTimer = setInterval(captureAndEvaluateFrame, 900);
+            } catch (err) {
+                console.warn('Camera access denied or failed:', err);
+                setUiStatus('searching', 'Camera unavailable. Use Upload Photo.');
+            }
+        }
+
+        function toggleCameraFacing() {
+            currentFacingMode = (currentFacingMode === 'environment') ? 'user' : 'environment';
+            document.getElementById('debug_cam_mode').innerText = currentFacingMode === 'environment' ? 'Environment (Back)' : 'User (Front)';
+            startCamera();
+        }
+
+        async function toggleTorch() {
+            if (!videoStream) return;
+            const track = videoStream.getVideoTracks()[0];
+            if (!track) return;
+
+            const capabilities = track.getCapabilities ? track.getCapabilities() : {};
+            if (capabilities.torch) {
+                isTorchOn = !isTorchOn;
+                await track.applyConstraints({ advanced: [{ torch: isTorchOn }] });
+                showToast(isTorchOn ? 'Torch Turned ON' : 'Torch Turned OFF');
+            } else {
+                showToast('Flashlight / Torch not supported on this lens');
+            }
+        }
+
+        /**
+         * Measure Sharpness (Variance of Gradient)
+         */
+        function calculateSharpness(ctx, w, h) {
+            const imgData = ctx.getImageData(0, 0, w, h);
+            const d = imgData.data;
+            let sum = 0, count = 0;
+
+            for (let y = 2; y < h - 2; y += 4) {
+                for (let x = 2; x < w - 2; x += 4) {
+                    const idx = (y * w + x) * 4;
+                    const grayCenter = (d[idx] * 0.299 + d[idx + 1] * 0.587 + d[idx + 2] * 0.114);
+                    const grayRight = (d[idx + 4] * 0.299 + d[idx + 5] * 0.587 + d[idx + 6] * 0.114);
+                    const grayBottom = (d[((y + 1) * w + x) * 4] * 0.299 + d[((y + 1) * w + x) * 4 + 1] * 0.587 + d[((y + 1) * w + x) * 4 + 2] * 0.114);
+                    const diffX = grayCenter - grayRight;
+                    const diffY = grayCenter - grayBottom;
+                    sum += (diffX * diffX + diffY * diffY);
+                    count++;
+                }
+            }
+            return count > 0 ? Math.round(sum / count) : 0;
+        }
+
+        /**
+         * Crop & Preprocess Card Region
+         */
+        function preprocessCardFrame(video) {
+            const vw = video.videoWidth;
+            const vh = video.videoHeight;
+            if (!vw || !vh) return null;
+
+            const cropW = Math.round(vw * 0.86);
+            const cropH = Math.round(vh * 0.72);
+            const cropX = Math.round((vw - cropW) / 2);
+            const cropY = Math.round((vh - cropH) / 2);
+
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.round(cropW * 1.4);
+            canvas.height = Math.round(cropH * 1.4);
+            const ctx = canvas.getContext('2d');
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+
+            ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, canvas.width, canvas.height);
+
+            // Contrast Stretching
+            const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const d = imgData.data;
+            let minL = 255, maxL = 0;
+
+            for (let i = 0; i < d.length; i += 8) {
+                const l = (d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114);
+                if (l < minL) minL = l;
+                if (l > maxL) maxL = l;
+            }
+            const range = (maxL - minL) || 1;
+
+            for (let i = 0; i < d.length; i += 4) {
+                const gray = (d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114);
+                const stretched = ((gray - minL) / range) * 255;
+                const finalVal = stretched < 125 ? Math.max(0, stretched * 0.55) : Math.min(255, stretched * 1.35);
+                d[i] = finalVal;
+                d[i + 1] = finalVal;
+                d[i + 2] = finalVal;
+            }
+            ctx.putImageData(imgData, 0, 0);
+
+            return {
+                canvas: canvas,
+                sharpness: calculateSharpness(ctx, canvas.width, canvas.height)
+            };
+        }
+
+        /**
+         * Frame Evaluation Loop
+         */
+        async function captureAndEvaluateFrame() {
+            if (isProcessing) return;
+            const video = document.getElementById('camera_video');
+            if (!video || video.readyState !== video.HAVE_ENOUGH_DATA) return;
+
+            const processed = preprocessCardFrame(video);
+            if (!processed) return;
+
+            const { canvas, sharpness } = processed;
+            updateDebugPreview(canvas, sharpness, '', null);
+
+            // Blur Filter
+            if (sharpness < 50) {
+                setUiStatus('searching', 'Align ID inside the box');
+                return;
+            }
+
+            setUiStatus('detected', 'ID Detected &bull; Hold still...');
+            await processOCRCanvas(canvas);
+        }
+
+        /**
+         * Run OCR & Extract Target Names
+         */
+        async function processOCRCanvas(canvas) {
+            isProcessing = true;
+            setUiStatus('reading', 'Reading Cardholder Names...');
+
+            try {
+                let text = '';
+                if (isWorkerReady && tesseractWorker) {
+                    const ret = await tesseractWorker.recognize(canvas);
+                    text = ret.data.text || '';
+                } else if (typeof Tesseract !== 'undefined') {
+                    const ret = await Tesseract.recognize(canvas, 'eng');
+                    text = ret.data.text || '';
+                }
+
+                const names = parsePhilippineNames(text);
+                updateDebugPreview(canvas, null, text, names);
+
+                if (names.last_name && (names.first_name || names.last_name.length >= 3)) {
+                    handleSuccessfulExtraction(names);
+                    return;
+                }
+            } catch (err) {
+                console.warn('OCR error:', err);
+            }
+
+            isProcessing = false;
+        }
+
+        function handleSuccessfulExtraction(names) {
+            clearInterval(scanTimer);
+            playSuccessChime();
+
+            lastExtractedNames = names;
+            setUiStatus('success', 'Cardholder Names Extracted!');
+
+            // Populate Card
+            const elLast = document.getElementById('val_last_name');
+            const elFirst = document.getElementById('val_first_name');
+            const elMid = document.getElementById('val_middle_name');
+
+            if (elLast) {
+                elLast.innerText = names.last_name || '—';
+                elLast.classList.add('highlight');
+            }
+            if (elFirst) {
+                elFirst.innerText = names.first_name || '—';
+                elFirst.classList.add('highlight');
+            }
+            if (elMid) {
+                elMid.innerText = names.middle_name || '—';
+                elMid.classList.add('highlight');
+            }
+
+            document.getElementById('engine_badge').style.display = 'inline-flex';
+            showToast(`Last Name: ${names.last_name} Extracted!`);
+        }
+
+        function restartScanner() {
+            lastExtractedNames = null;
+            isProcessing = false;
+
+            ['val_last_name', 'val_first_name', 'val_middle_name'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.innerText = '—';
+                    el.classList.remove('highlight');
+                }
+            });
+
+            document.getElementById('engine_badge').style.display = 'none';
+            setUiStatus('searching', 'Align ID inside the box');
+
+            startCamera();
+        }
+
+        /**
+         * Handle Photo Upload from Phone Gallery or Camera App
+         */
+        function handlePhotoUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            setUiStatus('reading', 'Analyzing uploaded ID photo...');
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = function() {
+                    let w = img.width;
+                    let h = img.height;
+                    const MAX_DIM = 1600;
+                    if (w > MAX_DIM || h > MAX_DIM) {
+                        if (w > h) {
+                            h = Math.round((h * MAX_DIM) / w);
+                            w = MAX_DIM;
+                        } else {
+                            w = Math.round((w * MAX_DIM) / h);
+                            h = MAX_DIM;
+                        }
+                    }
+
+                    const canvas = document.createElement('canvas');
+                    canvas.width = w;
+                    canvas.height = h;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, w, h);
+
+                    processOCRCanvas(canvas);
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function setUiStatus(state, msg) {
+            const box = document.getElementById('target_box');
+            const ind = document.getElementById('status_indicator');
+            const icon = document.getElementById('status_icon');
+            const txt = document.getElementById('status_text');
+
+            box.className = 'target-box ' + (state === 'complete' ? 'success' : state);
+            ind.className = 'status-indicator ' + state;
+            txt.innerHTML = msg;
+
+            if (state === 'searching') icon.className = 'ph ph-bounding-box';
+            else if (state === 'detected') icon.className = 'ph ph-hourglass-medium';
+            else if (state === 'reading') icon.className = 'ph ph-sparkle';
+            else if (state === 'success') icon.className = 'ph ph-check-circle-fill';
+        }
+
+        function playSuccessChime() {
+            try {
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(587.33, audioCtx.currentTime); // D5
+                osc.frequency.setValueAtTime(880.00, audioCtx.currentTime + 0.1); // A5
+                gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.35);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.35);
+            } catch (e) {}
+        }
+
+        function copyField(elementId, labelName) {
+            const el = document.getElementById(elementId);
+            if (!el || el.innerText === '—') return;
+            navigator.clipboard.writeText(el.innerText);
+            showToast(`${labelName}: "${el.innerText}" copied!`);
+        }
+
+        function copyAllNames() {
+            if (!lastExtractedNames) {
+                showToast('Scan an ID first to copy names');
+                return;
+            }
+            const fullName = [lastExtractedNames.last_name, lastExtractedNames.first_name, lastExtractedNames.middle_name].filter(Boolean).join(' ');
+            navigator.clipboard.writeText(fullName);
+            showToast(`Copied: ${fullName}`);
+        }
+
+        function showToast(msg) {
+            const toast = document.getElementById('toast_msg');
+            const txt = document.getElementById('toast_text');
+            txt.innerText = msg;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+
+        function toggleDebugDrawer() {
+            const drawer = document.getElementById('debug_drawer');
+            drawer.classList.toggle('active');
+        }
+
+        function updateDebugPreview(canvas, sharpness, rawText, json) {
+            if (canvas) {
+                const dCanvas = document.getElementById('debug_canvas');
+                dCanvas.width = canvas.width / 2.5;
+                dCanvas.height = canvas.height / 2.5;
+                const ctx = dCanvas.getContext('2d');
+                ctx.drawImage(canvas, 0, 0, dCanvas.width, dCanvas.height);
+            }
+            if (sharpness !== null && sharpness !== undefined) {
+                const el = document.getElementById('debug_sharpness');
+                el.innerText = sharpness + (sharpness >= 50 ? ' (Sharp)' : ' (Blurry)');
+                el.style.color = sharpness >= 50 ? '#34d399' : '#ef4444';
+            }
+            if (rawText) {
+                document.getElementById('debug_raw_text').innerText = rawText;
+            }
+            if (json) {
+                document.getElementById('debug_json').innerText = JSON.stringify(json, null, 2);
+            }
+        }
+
+        // Initialize on Load
+        window.addEventListener('DOMContentLoaded', () => {
+            initOCRWorker();
+            startCamera();
+        });
+    </script>
+</body>
+</html>
