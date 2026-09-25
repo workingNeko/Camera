@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>DMPS ID Scanner &bull; Name Reader Test</title>
+    <title>Philippine Driver's License &bull; Name Scanner</title>
     
-    <!-- Google Fonts: Plus Jakarta Sans -->
+    <!-- Google Fonts: Plus Jakarta Sans & JetBrains Mono -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
@@ -154,6 +154,14 @@
             object-fit: cover;
         }
 
+        #uploaded_preview_img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            display: none;
+            transition: transform 0.3s ease;
+        }
+
         /* Card Bounding Target Box */
         .target-box {
             position: absolute;
@@ -275,13 +283,14 @@
         .action-bar {
             padding: 12px 16px;
             display: flex;
-            gap: 10px;
+            gap: 8px;
             background: var(--card-bg);
+            flex-wrap: wrap;
         }
 
         .btn {
             flex: 1;
-            padding: 11px 16px;
+            padding: 10px 14px;
             border-radius: var(--radius-sm);
             font-size: 13px;
             font-weight: 700;
@@ -290,9 +299,10 @@
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            gap: 8px;
+            gap: 6px;
             transition: all 0.2s ease;
             font-family: inherit;
+            white-space: nowrap;
         }
 
         .btn-primary {
@@ -306,6 +316,11 @@
             color: #f1f5f9;
         }
         .btn-secondary:active { background: #475569; }
+
+        .btn-warning {
+            background: #f59e0b;
+            color: #000;
+        }
 
         .btn-success {
             background: #10b981;
@@ -442,7 +457,7 @@
             padding: 6px 8px;
             border-radius: 4px;
             color: #94a3b8;
-            max-height: 80px;
+            max-height: 90px;
             overflow-y: auto;
             white-space: pre-wrap;
             word-break: break-all;
@@ -487,12 +502,12 @@
                     <i class="ph ph-identification-card"></i>
                 </div>
                 <div class="brand-text">
-                    <h1>DMPS ID Reader</h1>
-                    <p>Static Real-Time Camera Test</p>
+                    <h1>LTO ID Name Scanner</h1>
+                    <p>Philippine Driver's License Parser</p>
                 </div>
             </div>
             <div class="badge-live">
-                <span class="pulse-dot"></span> Phone Camera OCR
+                <span class="pulse-dot"></span> In-Browser OCR
             </div>
         </header>
 
@@ -501,6 +516,7 @@
             
             <div class="viewport-wrapper">
                 <video id="camera_video" playsinline autoplay muted></video>
+                <img id="uploaded_preview_img" alt="Uploaded Preview">
                 
                 <!-- Target Alignment Box -->
                 <div id="target_box" class="target-box">
@@ -513,6 +529,9 @@
 
                 <!-- Floating Tools (Flip Camera & Torch) -->
                 <div class="viewport-controls">
+                    <button class="control-btn" id="btn_rotate_manual" title="Rotate 90°" style="display: none;" onclick="rotateUploadedImage()">
+                        <i class="ph ph-arrow-clockwise"></i>
+                    </button>
                     <button class="control-btn" id="btn_flip_camera" title="Switch Camera" onclick="toggleCameraFacing()">
                         <i class="ph ph-camera-rotate"></i>
                     </button>
@@ -537,8 +556,11 @@
                     <i class="ph ph-upload-simple"></i> Upload Photo
                     <input type="file" id="file_uploader" accept="image/*" style="display: none;" onchange="handlePhotoUpload(event)">
                 </label>
+                <button class="btn btn-secondary" id="btn_rotate_action" style="display: none;" onclick="rotateUploadedImage()">
+                    <i class="ph ph-arrow-clockwise"></i> Rotate 90°
+                </button>
                 <button class="btn btn-secondary" onclick="restartScanner()">
-                    <i class="ph ph-arrow-counter-clockwise"></i> Reset / Rescan
+                    <i class="ph ph-arrow-counter-clockwise"></i> Reset / Live Camera
                 </button>
             </div>
         </div>
@@ -550,7 +572,7 @@
                     <i class="ph ph-user-check"></i> Extracted Cardholder Name
                 </span>
                 <span class="badge-live" id="engine_badge" style="display: none;">
-                    <i class="ph ph-lightning"></i> Tesseract OCR
+                    <i class="ph ph-check-circle"></i> Name Parsed
                 </span>
             </div>
 
@@ -575,7 +597,7 @@
             <!-- Middle Name Field -->
             <div class="field-group">
                 <div class="field-label">
-                    <span>3. Middle Name / Initial</span>
+                    <span>3. Middle Name (Mother's Surname)</span>
                     <span class="copy-icon" onclick="copyField('val_middle_name', 'Middle Name')"><i class="ph ph-copy"></i></span>
                 </div>
                 <div class="field-box" id="val_middle_name">—</div>
@@ -594,10 +616,10 @@
         <div class="debug-panel" id="debug_drawer">
             <div style="display: flex; justify-content: space-between;">
                 <span><strong>Sharpness Score:</strong> <span id="debug_sharpness">0</span></span>
-                <span><strong>Camera:</strong> <span id="debug_cam_mode">Environment (Back)</span></span>
+                <span><strong>Camera Mode:</strong> <span id="debug_cam_mode">Environment (Back)</span></span>
             </div>
             <div>
-                <strong>Enhanced Card Crop:</strong>
+                <strong>Enhanced OCR Crop:</strong>
                 <canvas id="debug_canvas" class="debug-canvas-preview"></canvas>
             </div>
             <div>
@@ -631,8 +653,12 @@
         let isWorkerReady = false;
         let lastExtractedNames = null;
 
+        // Upload image state
+        let uploadedImageObj = null;
+        let currentRotationDegrees = 0;
+
         // Noise dictionary for Philippine IDs
-        const NOISE_WORDS = /^(republic|philippines|department|transportation|office|driver|drivers|license|non-professional|professional|student|permit|restrictions|conditions|agency|code|blood|weight|height|eyes|color|organ|donor|signature|official|receipt|valid|until|nationality|filipino|sex|gender|dotr|lto|assistant|secretary|galvante|edgar|card|acard|photo|licensee|autodeal|dmv|ucence|dmvews|ucener|bldg|building|land|republica|pilipinas|address|birth|date|exp|expiration|dl|no|lic|name|names|first|middle|last|given|family|surname|apelyido)$/i;
+        const NOISE_WORDS = /^(republic|philippines|department|transportation|office|driver|drivers|license|non-professional|professional|student|permit|restrictions|conditions|agency|code|blood|weight|height|eyes|color|organ|donor|signature|official|receipt|valid|until|nationality|filipino|sex|gender|dotr|lto|assistant|secretary|galvante|edgar|card|acard|photo|licensee|autodeal|dmv|ucence|dmvews|ucener|bldg|building|land|republica|pilipinas|address|birth|date|exp|expiration|dl|no|lic|name|names|first|middle|last|given|family|surname|apelyido|purok|barangay|brgy|daet|camarines|norte|capital|phl|none|black|brown)$/i;
 
         function isNoiseWord(str) {
             if (!str) return true;
@@ -652,8 +678,16 @@
         }
 
         /**
-         * Robust Philippine Name Extractor
-         * Locates: Last Name, First Name, Middle Name
+         * Precision Name Extractor for LTO Philippine Driver's Licenses
+         * 
+         * LTO Format Structure:
+         * Header: "Last Name, First Name, Middle Name" (or "Last Name. First Name. Middle Name")
+         * Value:  "ADLAWAN, LEVNICOLAYEVICH CRUZ"
+         * 
+         * Location Rule:
+         * 1. Last Name   -> Before the primary comma
+         * 2. First Name  -> After comma, all given names except the last token
+         * 3. Middle Name -> After comma, the final token (mother's maiden surname)
          */
         function parsePhilippineNames(rawText) {
             const res = { last_name: '', first_name: '', middle_name: '' };
@@ -661,69 +695,60 @@
 
             const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
 
-            // 1. Search for "Last Name, First Name, Middle Name" Header
-            const headerIdx = lines.findIndex(l => /Last\s*Name.*First\s*Name/i.test(l) || /Last\s*Name/i.test(l));
+            // 1. Search for Anchor Label: "Last Name, First Name, Middle Name"
+            const headerIdx = lines.findIndex(l => /Last\s*Name/i.test(l) && (/First\s*Name/i.test(l) || /Middle\s*Name/i.test(l) || /Surname/i.test(l)));
 
-            if (headerIdx !== -1 && lines[headerIdx + 1]) {
-                const nextLine = lines[headerIdx + 1];
-                
-                // Format A: Single line with comma "ADLAWAN, LEVNICOLAYEVICH CRUZ"
-                if (nextLine.includes(',')) {
-                    return splitCommaSeparatedName(nextLine);
-                }
+            if (headerIdx !== -1) {
+                // Check up to 3 lines directly below the anchor
+                for (let offset = 1; offset <= 3 && (headerIdx + offset) < lines.length; offset++) {
+                    const nextLine = lines[headerIdx + offset];
 
-                // Format B: Multi-line structure under header
-                // Line 1: Last Name, Line 2: First Name, Line 3: Middle Name
-                const candidateLast = nextLine.replace(/[^A-Za-z\s-]/g, '').trim();
-                if (isValidNameWord(candidateLast.split(/\s+/)[0])) {
-                    res.last_name = candidateLast.toUpperCase();
-
-                    if (lines[headerIdx + 2] && !isNoiseWord(lines[headerIdx + 2])) {
-                        const candidateFirst = lines[headerIdx + 2].replace(/[^A-Za-z\s-]/g, '').trim();
-                        if (isValidNameWord(candidateFirst.split(/\s+/)[0])) {
-                            res.first_name = candidateFirst.toUpperCase();
-                        }
+                    // Stop if hitting subsequent metadata labels
+                    if (/Nationality|Sex|Date\s*of\s*Birth|Address|License\s*No|Weight|Height/i.test(nextLine)) {
+                        break;
                     }
 
-                    if (lines[headerIdx + 3] && !isNoiseWord(lines[headerIdx + 3]) && !/^\d+$/.test(lines[headerIdx + 3])) {
-                        const candidateMid = lines[headerIdx + 3].replace(/[^A-Za-z\s-]/g, '').trim();
-                        if (isValidNameWord(candidateMid.split(/\s+/)[0])) {
-                            res.middle_name = candidateMid.toUpperCase();
-                        }
+                    // A. Standard Comma Separation: "ADLAWAN, LEVNICOLAYEVICH CRUZ"
+                    const commaMatch = splitCommaSeparatedName(nextLine);
+                    if (commaMatch) {
+                        return commaMatch;
                     }
 
-                    if (res.last_name && res.first_name) {
+                    // B. Fallback: Dot or whitespace separated
+                    const clean = nextLine.replace(/[^A-Za-z\s]/g, ' ').trim();
+                    const tokens = clean.split(/\s+/).filter(isValidNameWord);
+
+                    if (tokens.length >= 2 && tokens.length <= 5) {
+                        if (/^(DE|DEL|DELA|DE LA|SAN|SANTA|STA|VAN|VON)$/i.test(tokens[0]) && tokens.length >= 3) {
+                            res.last_name = `${tokens[0]} ${tokens[1]}`.toUpperCase();
+                            if (tokens.length === 3) {
+                                res.first_name = tokens[2].toUpperCase();
+                            } else {
+                                res.middle_name = tokens[tokens.length - 1].toUpperCase();
+                                res.first_name = tokens.slice(2, tokens.length - 1).join(' ').toUpperCase();
+                            }
+                        } else if (tokens.length === 2) {
+                            res.last_name = tokens[0].toUpperCase();
+                            res.first_name = tokens[1].toUpperCase();
+                        } else {
+                            res.last_name = tokens[0].toUpperCase();
+                            res.middle_name = tokens[tokens.length - 1].toUpperCase();
+                            res.first_name = tokens.slice(1, tokens.length - 1).join(' ').toUpperCase();
+                        }
                         return res;
                     }
                 }
             }
 
-            // 2. Search for any comma-separated line (e.g. "ADLAWAN, LEVNICOLAYEVICH C.")
+            // 2. Global search for comma-separated name line anywhere on card
             for (let i = 0; i < lines.length; i++) {
-                let l = lines[i];
-                if (l.includes(',') && !isNoiseWord(l) && !/street|ave|brgy|road|daet|city|subd|republic|philippines/i.test(l)) {
-                    const parsed = splitCommaSeparatedName(l);
-                    if (parsed.last_name && (parsed.first_name || parsed.last_name.length > 2)) {
-                        return parsed;
-                    }
+                const l = lines[i];
+                if (/street|ave|brgy|road|daet|camarines|norte|capital|purok|bagasbas|subd|republic|philippines/i.test(l)) {
+                    continue;
                 }
-            }
-
-            // 3. Fallback: Search valid surname candidates
-            for (let i = 0; i < lines.length; i++) {
-                let l = lines[i];
-                if (/\d/.test(l) || /street|ave|brgy|road|daet|city|subd|republic|philippines|license/i.test(l)) continue;
-                let tokens = l.replace(/[^A-Za-z\s,]/g, '').split(/\s+/).filter(isValidNameWord);
-                if (tokens.length >= 2 && tokens.length <= 4) {
-                    if (tokens.length >= 3) {
-                        res.last_name = tokens[0].toUpperCase();
-                        res.first_name = tokens.slice(1, -1).join(' ').toUpperCase();
-                        res.middle_name = tokens[tokens.length - 1].toUpperCase();
-                    } else {
-                        res.last_name = tokens[0].toUpperCase();
-                        res.first_name = tokens[1].toUpperCase();
-                    }
-                    return res;
+                const parsed = splitCommaSeparatedName(l);
+                if (parsed && parsed.last_name && (parsed.first_name || parsed.last_name.length >= 3)) {
+                    return parsed;
                 }
             }
 
@@ -732,28 +757,32 @@
 
         function splitCommaSeparatedName(line) {
             const res = { last_name: '', first_name: '', middle_name: '' };
+            if (!line) return null;
+
             const clean = line.replace(/[^A-Za-z\s,-]/g, ' ').replace(/\s+/g, ' ').trim();
             const parts = clean.split(',');
-            if (parts.length < 2) return res;
+            if (parts.length < 2) return null;
 
             const lTokens = parts[0].trim().split(/\s+/).filter(isValidNameWord);
             const rTokens = parts.slice(1).join(' ').trim().split(/\s+/).filter(isValidNameWord);
 
-            if (lTokens.length > 0) {
+            if (lTokens.length > 0 && rTokens.length > 0) {
                 res.last_name = lTokens.join(' ').toUpperCase();
+
+                if (rTokens.length === 1) {
+                    res.first_name = rTokens[0].toUpperCase();
+                } else if (rTokens.length === 2) {
+                    res.first_name = rTokens[0].toUpperCase();
+                    res.middle_name = rTokens[1].toUpperCase();
+                } else {
+                    res.middle_name = rTokens[rTokens.length - 1].toUpperCase();
+                    res.first_name = rTokens.slice(0, -1).join(' ').toUpperCase();
+                }
+
+                return res;
             }
 
-            if (rTokens.length === 1) {
-                res.first_name = rTokens[0].toUpperCase();
-            } else if (rTokens.length === 2) {
-                res.first_name = rTokens[0].toUpperCase();
-                res.middle_name = rTokens[1].toUpperCase();
-            } else if (rTokens.length >= 3) {
-                res.middle_name = rTokens[rTokens.length - 1].toUpperCase();
-                res.first_name = rTokens.slice(0, rTokens.length - 1).join(' ').toUpperCase();
-            }
-
-            return res;
+            return null;
         }
 
         /**
@@ -779,11 +808,15 @@
          * Start Phone Camera Stream
          */
         async function startCamera() {
-            if (videoStream) {
-                videoStream.getTracks().forEach(t => t.stop());
-            }
+            stopCamera();
 
             const video = document.getElementById('camera_video');
+            const previewImg = document.getElementById('uploaded_preview_img');
+            video.style.display = 'block';
+            previewImg.style.display = 'none';
+            document.getElementById('btn_rotate_manual').style.display = 'none';
+            document.getElementById('btn_rotate_action').style.display = 'none';
+
             const constraints = {
                 video: {
                     facingMode: { ideal: currentFacingMode },
@@ -805,6 +838,14 @@
             }
         }
 
+        function stopCamera() {
+            clearInterval(scanTimer);
+            if (videoStream) {
+                videoStream.getTracks().forEach(t => t.stop());
+                videoStream = null;
+            }
+        }
+
         function toggleCameraFacing() {
             currentFacingMode = (currentFacingMode === 'environment') ? 'user' : 'environment';
             document.getElementById('debug_cam_mode').innerText = currentFacingMode === 'environment' ? 'Environment (Back)' : 'User (Front)';
@@ -820,9 +861,9 @@
             if (capabilities.torch) {
                 isTorchOn = !isTorchOn;
                 await track.applyConstraints({ advanced: [{ torch: isTorchOn }] });
-                showToast(isTorchOn ? 'Torch Turned ON' : 'Torch Turned OFF');
+                showToast(isTorchOn ? 'Torch ON' : 'Torch OFF');
             } else {
-                showToast('Flashlight / Torch not supported on this lens');
+                showToast('Flashlight / Torch not supported on this camera');
             }
         }
 
@@ -900,7 +941,7 @@
         }
 
         /**
-         * Frame Evaluation Loop
+         * Frame Evaluation Loop (Live Camera)
          */
         async function captureAndEvaluateFrame() {
             if (isProcessing) return;
@@ -945,13 +986,14 @@
 
                 if (names.last_name && (names.first_name || names.last_name.length >= 3)) {
                     handleSuccessfulExtraction(names);
-                    return;
+                    return true;
                 }
             } catch (err) {
                 console.warn('OCR error:', err);
             }
 
             isProcessing = false;
+            return false;
         }
 
         function handleSuccessfulExtraction(names) {
@@ -959,7 +1001,7 @@
             playSuccessChime();
 
             lastExtractedNames = names;
-            setUiStatus('success', 'Cardholder Names Extracted!');
+            setUiStatus('success', 'Cardholder Names Located!');
 
             // Populate Card
             const elLast = document.getElementById('val_last_name');
@@ -986,6 +1028,8 @@
         function restartScanner() {
             lastExtractedNames = null;
             isProcessing = false;
+            uploadedImageObj = null;
+            currentRotationDegrees = 0;
 
             ['val_last_name', 'val_first_name', 'val_middle_name'].forEach(id => {
                 const el = document.getElementById(id);
@@ -1008,36 +1052,111 @@
             const file = event.target.files[0];
             if (!file) return;
 
+            stopCamera();
+            currentRotationDegrees = 0;
+
             setUiStatus('reading', 'Analyzing uploaded ID photo...');
 
             const reader = new FileReader();
             reader.onload = function(e) {
                 const img = new Image();
                 img.onload = function() {
-                    let w = img.width;
-                    let h = img.height;
-                    const MAX_DIM = 1600;
-                    if (w > MAX_DIM || h > MAX_DIM) {
-                        if (w > h) {
-                            h = Math.round((h * MAX_DIM) / w);
-                            w = MAX_DIM;
-                        } else {
-                            w = Math.round((w * MAX_DIM) / h);
-                            h = MAX_DIM;
-                        }
-                    }
+                    uploadedImageObj = img;
+                    
+                    const video = document.getElementById('camera_video');
+                    const previewImg = document.getElementById('uploaded_preview_img');
+                    video.style.display = 'none';
+                    previewImg.style.display = 'block';
+                    previewImg.src = e.target.result;
+                    previewImg.style.transform = 'rotate(0deg)';
 
-                    const canvas = document.createElement('canvas');
-                    canvas.width = w;
-                    canvas.height = h;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0, w, h);
+                    document.getElementById('btn_rotate_manual').style.display = 'flex';
+                    document.getElementById('btn_rotate_action').style.display = 'inline-flex';
 
-                    processOCRCanvas(canvas);
+                    processUploadedImageWithAutoRotation(img);
                 };
                 img.src = e.target.result;
             };
             reader.readAsDataURL(file);
+        }
+
+        /**
+         * Renders rotated image onto canvas and runs OCR
+         */
+        async function runOcrOnRotatedImage(img, degrees) {
+            const MAX_DIM = 1600;
+            let w = img.width;
+            let h = img.height;
+            if (w > MAX_DIM || h > MAX_DIM) {
+                if (w > h) {
+                    h = Math.round((h * MAX_DIM) / w);
+                    w = MAX_DIM;
+                } else {
+                    w = Math.round((w * MAX_DIM) / h);
+                    h = MAX_DIM;
+                }
+            }
+
+            const canvas = document.createElement('canvas');
+            if (degrees === 90 || degrees === 270) {
+                canvas.width = h;
+                canvas.height = w;
+            } else {
+                canvas.width = w;
+                canvas.height = h;
+            }
+
+            const ctx = canvas.getContext('2d');
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+
+            ctx.translate(canvas.width / 2, canvas.height / 2);
+            ctx.rotate((degrees * Math.PI) / 180);
+            ctx.drawImage(img, -w / 2, -h / 2, w, h);
+
+            return await processOCRCanvas(canvas);
+        }
+
+        /**
+         * Auto tries multiple orientations (0°, 90°, 270°) for sideways photos
+         */
+        async function processUploadedImageWithAutoRotation(img) {
+            // Pass 1: 0 degrees
+            let success = await runOcrOnRotatedImage(img, 0);
+            if (success) return;
+
+            // Pass 2: 90 degrees clockwise (for sideways portrait images)
+            setUiStatus('reading', 'Testing portrait orientation (90°)...');
+            success = await runOcrOnRotatedImage(img, 90);
+            if (success) {
+                currentRotationDegrees = 90;
+                document.getElementById('uploaded_preview_img').style.transform = 'rotate(90deg)';
+                return;
+            }
+
+            // Pass 3: 270 degrees counter-clockwise
+            setUiStatus('reading', 'Testing alternate orientation (270°)...');
+            success = await runOcrOnRotatedImage(img, 270);
+            if (success) {
+                currentRotationDegrees = 270;
+                document.getElementById('uploaded_preview_img').style.transform = 'rotate(270deg)';
+                return;
+            }
+
+            setUiStatus('searching', 'Names not found. Try tapping Rotate 90° or re-uploading.');
+        }
+
+        /**
+         * Manual Rotate 90 Degrees Button Handler
+         */
+        async function rotateUploadedImage() {
+            if (!uploadedImageObj) return;
+
+            currentRotationDegrees = (currentRotationDegrees + 90) % 360;
+            document.getElementById('uploaded_preview_img').style.transform = `rotate(${currentRotationDegrees}deg)`;
+            setUiStatus('reading', `Scanning at ${currentRotationDegrees}°...`);
+
+            await runOcrOnRotatedImage(uploadedImageObj, currentRotationDegrees);
         }
 
         function setUiStatus(state, msg) {
